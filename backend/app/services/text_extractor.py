@@ -1,6 +1,7 @@
 """
 Text extraction service supporting PDF, DOCX, and TXT formats.
-Uses PyMuPDF for PDF and python-docx for DOCX as specified in Chapter 3.
+Uses pypdf/pdfplumber for PDF (pure-Python, no C build required) and
+python-docx for DOCX as specified in Chapter 3.
 """
 import re
 import io
@@ -8,12 +9,20 @@ from typing import Tuple
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
-    import fitz  # PyMuPDF
-    text_parts = []
-    with fitz.open(stream=file_bytes, filetype="pdf") as doc:
-        for page in doc:
-            text_parts.append(page.get_text("text"))
-    return _clean_text("\n".join(text_parts))
+    # Try pdfplumber first (better layout handling), fall back to pypdf
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            pages = [page.extract_text() or "" for page in pdf.pages]
+        return _clean_text("\n".join(pages))
+    except Exception:
+        pass
+
+    # Fallback: pypdf (also pure-Python, no compilation)
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(file_bytes))
+    pages = [page.extract_text() or "" for page in reader.pages]
+    return _clean_text("\n".join(pages))
 
 
 def extract_text_from_docx(file_bytes: bytes) -> str:

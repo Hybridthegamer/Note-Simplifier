@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
@@ -28,10 +29,32 @@ def create_app():
 
     global mongo_client, db
     mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/academic_notes_db")
-    mongo_client = MongoClient(mongo_uri)
-    db_name = mongo_uri.split("/")[-1].split("?")[0] if "/" in mongo_uri else "academic_notes_db"
-    db = mongo_client[db_name]
-    app.db = db
+
+    if "<username>" in mongo_uri or "<password>" in mongo_uri or mongo_uri.endswith("cluster.mongodb.net/academic_notes_db?retryWrites=true&w=majority"):
+        raise RuntimeError(
+            "\n\n[CONFIG ERROR] MONGO_URI in your .env still contains placeholder values.\n"
+            "Please update backend/.env with a real MongoDB connection string.\n\n"
+            "Options:\n"
+            "  A) MongoDB Atlas (cloud): https://www.mongodb.com/atlas  → free tier → get SRV URI\n"
+            "  B) Local MongoDB:  set MONGO_URI=mongodb://localhost:27017/academic_notes_db\n"
+        )
+
+    try:
+        mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=8000)
+        parsed_path = urlparse(mongo_uri).path.lstrip("/").split("?")[0].strip()
+        db_name = parsed_path or "academic_notes_db"
+        db = mongo_client[db_name]
+        # Force a connection check so we fail fast with a clear message
+        mongo_client.admin.command("ping")
+        app.db = db
+    except Exception as exc:
+        raise RuntimeError(
+            f"\n\n[DB ERROR] Could not connect to MongoDB: {exc}\n\n"
+            "Check that:\n"
+            "  • MONGO_URI in backend/.env is correct\n"
+            "  • Your IP is whitelisted in Atlas (Network Access → Add IP)\n"
+            "  • Local MongoDB is running if using mongodb://localhost\n"
+        ) from exc
 
     db["users"].create_index("email", unique=True)
     db["documents"].create_index("user_id")
