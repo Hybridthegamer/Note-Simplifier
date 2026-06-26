@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
@@ -40,7 +41,8 @@ def create_app():
 
     try:
         mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=8000)
-        db_name = mongo_uri.split("/")[-1].split("?")[0] if "/" in mongo_uri else "academic_notes_db"
+        parsed_path = urlparse(mongo_uri).path.lstrip("/").split("?")[0].strip()
+        db_name = parsed_path or "academic_notes_db"
         db = mongo_client[db_name]
         # Force a connection check so we fail fast with a clear message
         mongo_client.admin.command("ping")
